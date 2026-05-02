@@ -382,7 +382,7 @@
   <header>
     <h1 id="title">Voice Memos</h1>
     <div class="toolbar" id="toolbar">
-      <span class="build-pill" id="buildPill">v0.5</span>
+      <span class="build-pill" id="buildPill">v0.6</span>
       <button class="btn ghost" id="editBtn">Edit</button>
     </div>
   </header>
@@ -1044,7 +1044,9 @@
       const file = new File([it.blob], filename, { type: it.mimeType || 'audio/mp4' });
       if (!navigator.canShare || !navigator.canShare({ files: [file] })) return false;
       try {
-        await navigator.share({ files: [file], title: it.name });
+        // Only pass files — title/text get saved as a sidecar .txt by iOS
+        // Save-to-Files. The filename itself already carries the name.
+        await navigator.share({ files: [file] });
         return true;
       } catch (err) {
         if (err && err.name === 'AbortError') return true; // user cancelled — counts as handled
@@ -1362,9 +1364,9 @@
     let initial = await checkBuildStamp();
     if (initial) {
       const tail = String(initial).slice(-6);
-      $('#buildPill').textContent = 'v0.5·' + tail;
+      $('#buildPill').textContent = 'v0.6·' + tail;
     } else {
-      $('#buildPill').textContent = 'v0.5';
+      $('#buildPill').textContent = 'v0.6';
       return;
     }
     setInterval(async () => {
