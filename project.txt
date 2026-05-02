@@ -1,0 +1,124 @@
+Voice Memo — personal recorder PWA
+====================================
+
+What it is
+----------
+A clean, fast voice recorder for daily use. Apple Voice Memos as the baseline,
+customised for an E-ink device — light cream background, strong black text,
+minimal animation.
+
+Status
+------
+Waves 1+2+3 complete. Functional v0 with QA pass and design polish.
+Tunnelled at https://mic.aiprofits.cc (port 5096 via personal-apps tunnel).
+PM2 process: `voice-memo`. Listed in local-dashboard.
+
+Stack
+-----
+- Vanilla HTML/CSS/JS (single index.html)
+- MediaRecorder API for capture (Opus in webm where supported, AAC in mp4 on Safari)
+- AudioContext + AnalyserNode for live waveform during recording
+- IndexedDB for storing audio Blobs + metadata
+- Service worker for offline shell + PWA install
+- No third-party dependencies
+
+Audio quality choices
+---------------------
+- 48 kHz sample rate, mono channel, 128 kbps target bitrate
+- echoCancellation / noiseSuppression / autoGainControl ON
+  (these are what make Apple Voice Memos sound clean for voice — kept)
+- Picks best supported MIME in priority order:
+    audio/webm;codecs=opus → audio/ogg;codecs=opus → audio/webm
+    → audio/mp4;codecs=mp4a.40.2 → audio/mp4 → audio/aac
+- Records in 250 ms chunks for resilience
+
+Privacy
+-------
+All recordings live in IndexedDB on the device. Nothing is uploaded.
+Per the workspace rule: single-device, browser-only, no sync → encryption skipped.
+
+Features (v0)
+-------------
+- Big record button — tap to start, tap again to stop
+- Pause / resume mid-recording (stop ends, pause holds)
+- Live waveform + tenth-of-a-second timer while recording
+- Saved list (newest first) — name, relative date, duration
+- Tap a row to expand: scrubber, current/remaining time, play/pause,
+  skip back 15 s, skip forward 15 s
+- Inline rename (tap Rename) and per-row delete
+- Edit mode: Select All / Deselect All, multi-select, Delete (N) / Delete All
+- Quick play button on every row (without opening the player)
+- PWA: home-screen install, offline shell, custom waveform icon
+
+Things deferred (Wave 4 candidates — confirm with user)
+-------------------------------------------------------
+- Sharing / export (download as file, share sheet)
+- Transcription (would need server or Whisper-in-browser)
+- Trim / edit clip
+- Search by name
+- Folders / tags
+- Cloud backup
+- Build-stamp endpoint (this is a static site so no server route — would need
+  a Vercel function if/when deployed; not required for local PWA use)
+
+Deploy path (when user wants it)
+--------------------------------
+Static site → Vercel (aeonreon team). No serverless functions needed.
+The cache-busting build-stamp pattern from APPS/CLAUDE.md would require either:
+  (a) a tiny Vercel function exposing process.env.VERCEL_GIT_COMMIT_SHA, or
+  (b) a build step that injects the SHA into index.html.
+Add when the user installs it on their iPhone/BOOX and asks for it.
+
+Local run
+---------
+Service worker + getUserMedia require https or localhost. PM2 already
+runs the Express server on port 5096:
+    pm2 logs voice-memo      # see output
+    pm2 restart voice-memo   # apply code changes
+Or run directly without PM2:
+    cd APPS/voice-memo && node server.js
+Then visit http://localhost:5096. Allow the mic prompt.
+
+Public URL
+----------
+https://mic.aiprofits.cc — via the personal-apps Cloudflare tunnel
+(UUID 48d1aed3-...). Ingress added to /Users/aiautomator/.cloudflared/personal-apps.yml.
+
+Cross-platform compatibility
+----------------------------
+iOS Safari (14.5+):
+  - MediaRecorder works since iOS 14.5
+  - Codec preference picks audio/mp4;codecs=mp4a.40.2 (AAC)
+  - Install via Add to Home Screen — manifest + apple-touch-icon present
+  - Status bar respects theme-color (#F8F5EE)
+
+Android Chrome (47+, basically all modern devices):
+  - MediaRecorder works native
+  - Codec preference picks audio/webm;codecs=opus (best quality+size)
+  - Install via Chrome's "Install app" prompt or three-dot menu
+  - Manifest meets installability criteria: name, short_name, start_url,
+    display:standalone, theme_color, background_color, 192+512 icons,
+    maskable icon for adaptive shapes
+  - Service worker scope = /, works offline shell (recordings stored
+    in IndexedDB on the device — survive offline by default)
+  - Status bar tinted with theme_color (#F8F5EE)
+
+Both platforms use the same codebase. No platform-specific branches —
+the codec picker (`pickMime()` in index.html) chooses whichever the
+runtime supports.
+
+Bug pass + design pass
+----------------------
+QA_CHECKLIST.md and BUG_REPORT.md document the Wave 2 functional QA.
+31/38 checks passed in the first run; 6 follow-up fixes applied:
+  - row tap target (pointer-events on readonly name input)
+  - IndexedDB error handling in render() and onStopped()
+  - probeDuration() 3-second timeout race
+  - SW cache name templated via server.js (one cache per build)
+  - SW network-first for HTML so reload banner delivers fresh build
+  - express.static deny rules for server.js / package.json / project.txt
+
+Icon generation
+---------------
+    cd scripts && python3 make-icons.py
+Requires Pillow (pip install pillow).

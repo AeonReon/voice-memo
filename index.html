@@ -1,0 +1,1288 @@
+<!DOCTYPE html>
+<html lang="en-GB">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
+<meta name="theme-color" content="#F8F5EE" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="default" />
+<meta name="apple-mobile-web-app-title" content="Voice Memo" />
+<meta name="mobile-web-app-capable" content="yes" />
+<title>Voice Memo</title>
+<link rel="manifest" href="/manifest.json" />
+<link rel="apple-touch-icon" href="/images/apple-touch-icon.png" />
+<link rel="icon" type="image/png" href="/images/favicon.png" />
+
+<style>
+  :root {
+    --bg: #F8F5EE;          /* warm cream — easy on e-ink + eyes */
+    --ink: #000000;         /* strong black for max contrast */
+    --ink-2: #2A2622;       /* secondary text */
+    --ink-3: #6B645B;       /* tertiary / metadata */
+    --rule: rgba(0,0,0,0.12);
+    --rule-strong: rgba(0,0,0,0.22);
+    --paper: #FFFFFF;       /* card surface */
+    --rec: #B91C1C;         /* recording red — used sparingly */
+    --rec-soft: #FEE2E2;
+    --hi: #000000;          /* selection / active */
+    --tap: rgba(0,0,0,0.06);
+    --shadow: 0 1px 0 rgba(0,0,0,0.05);
+    --radius: 14px;
+  }
+
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; padding: 0; height: 100%; }
+
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter", system-ui, sans-serif;
+    font-size: 17px;
+    line-height: 1.4;
+    overflow: hidden;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  /* ── App shell ──────────────────────────────────────────── */
+  #app {
+    display: flex; flex-direction: column;
+    height: 100vh; height: 100dvh;
+    max-width: 720px; margin: 0 auto;
+    position: relative;
+  }
+
+  header {
+    padding: env(safe-area-inset-top, 12px) 20px 14px;
+    padding-top: max(env(safe-area-inset-top, 12px), 18px);
+    border-bottom: 1px solid var(--rule);
+    background: var(--bg);
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 12px;
+  }
+  header h1 {
+    margin: 0;
+    font-size: 26px; font-weight: 800; letter-spacing: -0.02em;
+    color: var(--ink);
+  }
+  header .meta {
+    font-size: 13px; color: var(--ink-3);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .toolbar {
+    display: flex; gap: 8px; align-items: center;
+  }
+  .btn {
+    appearance: none; -webkit-appearance: none;
+    background: var(--paper);
+    color: var(--ink);
+    border: 1px solid var(--rule-strong);
+    border-radius: 10px;
+    padding: 8px 14px;
+    font: inherit; font-size: 14px; font-weight: 600;
+    min-height: 38px;
+    cursor: pointer;
+    transition: background 80ms;
+  }
+  .btn:active { background: var(--tap); }
+  .btn[aria-pressed="true"] { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+  .btn.danger { color: var(--rec); }
+  .btn.ghost { background: transparent; border-color: transparent; }
+  .btn:disabled { opacity: 0.35; cursor: default; }
+  .btn.icon { padding: 8px; min-width: 38px; display: inline-flex; align-items: center; justify-content: center; }
+  .btn.icon svg { width: 20px; height: 20px; }
+
+  /* ── List ───────────────────────────────────────────────── */
+  main {
+    flex: 1 1 auto;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    padding: 8px 0 200px;
+  }
+  .empty {
+    text-align: center; color: var(--ink-3);
+    padding: 80px 24px;
+  }
+  .empty .big {
+    font-size: 22px; font-weight: 700; color: var(--ink); margin-bottom: 8px;
+  }
+
+  ul.list { list-style: none; margin: 0; padding: 0; }
+  li.row {
+    border-bottom: 1px solid var(--rule);
+    padding: 14px 20px;
+    display: flex; flex-direction: column; gap: 10px;
+    background: var(--bg);
+  }
+  li.row.selected { background: rgba(0,0,0,0.04); }
+  li.row .top {
+    display: flex; align-items: center; gap: 12px;
+  }
+  li.row .check {
+    width: 24px; height: 24px; flex: 0 0 24px;
+    border: 2px solid var(--ink); border-radius: 50%;
+    display: none; align-items: center; justify-content: center;
+    background: var(--paper);
+  }
+  li.row .check::after {
+    content: ""; width: 12px; height: 12px; border-radius: 50%;
+    background: var(--ink); transform: scale(0); transition: transform 80ms;
+  }
+  li.row.selected .check::after { transform: scale(1); }
+  body.editing li.row .check { display: inline-flex; }
+  body.editing li.row .quick-play { display: none; }
+
+  li.row .name {
+    flex: 1 1 auto;
+    font-size: 17px; font-weight: 600;
+    color: var(--ink);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    background: transparent; border: none; padding: 0; outline: none;
+    font-family: inherit;
+  }
+  li.row .name[readonly] { pointer-events: none; }
+  li.row .name:not([readonly]) { pointer-events: auto; }
+  li.row .name:focus { outline: 2px solid var(--ink); outline-offset: 2px; border-radius: 4px; }
+
+  li.row .quick-play {
+    width: 38px; height: 38px; flex: 0 0 38px;
+    border-radius: 50%;
+    background: var(--paper);
+    border: 1.5px solid var(--ink);
+    display: inline-flex; align-items: center; justify-content: center;
+    cursor: pointer;
+  }
+  li.row .quick-play svg { width: 16px; height: 16px; fill: var(--ink); }
+  li.row .quick-play.playing svg { fill: var(--ink); }
+
+  li.row .meta {
+    display: flex; gap: 10px; align-items: center;
+    font-size: 13px; color: var(--ink-3);
+    font-variant-numeric: tabular-nums;
+  }
+  li.row .meta .dot { width: 3px; height: 3px; border-radius: 50%; background: var(--ink-3); }
+
+  /* expanded player */
+  li.row .player {
+    display: none;
+    padding: 4px 0 2px;
+  }
+  li.row.open .player { display: block; }
+  li.row.open { background: var(--paper); }
+  .scrub {
+    width: 100%;
+    -webkit-appearance: none; appearance: none;
+    background: transparent;
+    height: 24px;
+    margin: 4px 0 2px;
+  }
+  .scrub::-webkit-slider-runnable-track {
+    height: 3px; background: var(--rule-strong); border-radius: 999px;
+  }
+  .scrub::-webkit-slider-thumb {
+    -webkit-appearance: none; appearance: none;
+    width: 18px; height: 18px; border-radius: 50%;
+    background: var(--ink); margin-top: -7px;
+    border: 0;
+  }
+  .scrub::-moz-range-track { height: 3px; background: var(--rule-strong); border-radius: 999px; }
+  .scrub::-moz-range-thumb { width: 18px; height: 18px; border-radius: 50%; background: var(--ink); border: 0; }
+  .scrub-times {
+    display: flex; justify-content: space-between;
+    font-size: 12px; color: var(--ink-3);
+    font-variant-numeric: tabular-nums;
+    margin-bottom: 6px;
+  }
+  .controls {
+    display: flex; align-items: center; justify-content: center; gap: 28px;
+    padding: 8px 0 4px;
+  }
+  .controls .ctrl {
+    appearance: none; background: transparent; border: 0;
+    padding: 6px;
+    cursor: pointer;
+    color: var(--ink);
+    display: inline-flex; align-items: center; justify-content: center;
+  }
+  .controls .ctrl svg { width: 28px; height: 28px; }
+  .controls .ctrl.big {
+    width: 60px; height: 60px; border-radius: 50%;
+    background: var(--ink); color: var(--paper);
+  }
+  .controls .ctrl.big svg { width: 26px; height: 26px; fill: var(--paper); }
+  .controls .ctrl[disabled] { opacity: 0.3; }
+  .controls .ctrl .lbl {
+    position: absolute; left: -9999px;
+  }
+  .controls .ctrl .skip-num {
+    position: absolute; font-size: 9px; font-weight: 700;
+    pointer-events: none;
+  }
+  .row-actions {
+    display: flex; justify-content: space-between; align-items: center;
+    padding-top: 6px;
+    border-top: 1px solid var(--rule);
+    margin-top: 8px;
+  }
+  .row-actions button { font-size: 13px; }
+
+  /* ── Recorder dock ─────────────────────────────────────── */
+  .dock {
+    position: absolute; left: 0; right: 0; bottom: 0;
+    padding: 18px 20px calc(env(safe-area-inset-bottom, 16px) + 18px);
+    background: var(--bg);
+    border-top: 1px solid var(--rule);
+    box-shadow: 0 -2px 12px rgba(0,0,0,0.04);
+  }
+  .dock-inner {
+    display: flex; flex-direction: column; align-items: center; gap: 12px;
+  }
+
+  .timer {
+    font-size: 32px; font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: 0.02em;
+    color: var(--ink);
+    min-height: 36px;
+  }
+  .timer.idle { color: var(--ink-3); }
+  .timer.paused { color: var(--ink-3); }
+
+  .wave {
+    width: 100%; max-width: 520px;
+    height: 56px;
+    background: transparent;
+  }
+
+  .rec-row {
+    display: flex; align-items: center; justify-content: center;
+    gap: 32px; width: 100%;
+  }
+
+  .rec-btn {
+    width: 78px; height: 78px;
+    border-radius: 50%;
+    background: var(--paper);
+    border: 3px solid var(--ink);
+    cursor: pointer;
+    position: relative;
+    transition: transform 120ms;
+    display: inline-flex; align-items: center; justify-content: center;
+    padding: 0;
+  }
+  .rec-btn:active { transform: scale(0.96); }
+  .rec-btn .core {
+    width: 56px; height: 56px;
+    border-radius: 50%;
+    background: var(--rec);
+    transition: width 180ms, height 180ms, border-radius 180ms;
+  }
+  body.recording .rec-btn .core { width: 28px; height: 28px; border-radius: 6px; }
+
+  .pause-btn {
+    width: 60px; height: 60px;
+    border-radius: 50%;
+    background: var(--paper);
+    border: 2px solid var(--ink);
+    cursor: pointer;
+    display: none;
+    align-items: center; justify-content: center;
+    padding: 0;
+  }
+  body.recording .pause-btn { display: inline-flex; }
+  .pause-btn svg { width: 22px; height: 22px; fill: var(--ink); }
+
+  .hint {
+    font-size: 13px; color: var(--ink-3);
+    text-align: center;
+    min-height: 18px;
+  }
+
+  /* edit-mode bottom bar */
+  .edit-bar {
+    position: absolute; left: 0; right: 0; bottom: 0;
+    padding: 14px 20px calc(env(safe-area-inset-bottom, 16px) + 14px);
+    background: var(--bg);
+    border-top: 1px solid var(--rule);
+    display: none;
+    align-items: center; justify-content: space-between;
+    gap: 12px;
+  }
+  body.editing .edit-bar { display: flex; }
+  body.editing .dock { display: none; }
+  .edit-bar .count { font-weight: 600; }
+
+  /* version pill — sits in the top toolbar so it never collides with the
+     dock or edit-bar. Subtle, monospaced, ignored when not relevant. */
+  .build-pill {
+    font-size: 10px; color: var(--ink-3);
+    opacity: 0.5;
+    pointer-events: none;
+    font-variant-numeric: tabular-nums;
+    margin-right: 4px;
+    align-self: center;
+    user-select: none;
+  }
+  .update-banner {
+    position: fixed; left: 0; right: 0; bottom: 0;
+    padding: 14px 20px calc(env(safe-area-inset-bottom, 16px) + 14px);
+    background: var(--ink); color: var(--paper);
+    text-align: center; font-weight: 600;
+    cursor: pointer;
+    z-index: 99;
+    display: none;
+  }
+
+  /* toast */
+  .toast {
+    position: fixed; left: 50%; transform: translateX(-50%);
+    bottom: 220px;
+    background: var(--ink); color: var(--paper);
+    padding: 10px 18px; border-radius: 999px;
+    font-size: 14px; font-weight: 600;
+    opacity: 0; transition: opacity 200ms;
+    pointer-events: none; z-index: 50;
+  }
+  .toast.show { opacity: 1; }
+
+  /* permission overlay */
+  .perm {
+    position: absolute; inset: 0;
+    background: var(--bg);
+    display: none;
+    flex-direction: column; align-items: center; justify-content: center;
+    text-align: center; padding: 40px;
+    z-index: 30;
+  }
+  .perm.show { display: flex; }
+  .perm h2 { margin: 0 0 8px; font-size: 22px; }
+  .perm p { color: var(--ink-3); margin: 0 0 24px; max-width: 320px; }
+  .perm .btn { background: var(--ink); color: var(--paper); border-color: var(--ink); padding: 14px 24px; font-size: 16px; }
+
+  /* tighten on small screens */
+  @media (max-width: 380px) {
+    header h1 { font-size: 22px; }
+    .timer { font-size: 28px; }
+    .rec-btn { width: 70px; height: 70px; }
+    .rec-btn .core { width: 48px; height: 48px; }
+  }
+
+  /* high-contrast / e-ink hint: hairlines stay visible */
+  @media (prefers-contrast: more) {
+    :root { --rule: rgba(0,0,0,0.3); --rule-strong: rgba(0,0,0,0.5); }
+  }
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <h1 id="title">Voice Memos</h1>
+    <div class="toolbar" id="toolbar">
+      <span class="build-pill" id="buildPill">v0.1</span>
+      <button class="btn ghost" id="editBtn">Edit</button>
+    </div>
+  </header>
+
+  <main>
+    <ul class="list" id="list"></ul>
+    <div class="empty" id="empty">
+      <div class="big">No recordings yet</div>
+      <div>Tap the red button to start.</div>
+    </div>
+  </main>
+
+  <div class="dock" id="dock">
+    <div class="dock-inner">
+      <canvas class="wave" id="wave" width="800" height="120" aria-hidden="true"></canvas>
+      <div class="timer idle" id="timer">00:00.0</div>
+      <div class="rec-row">
+        <button class="pause-btn" id="pauseBtn" aria-label="Pause recording">
+          <svg viewBox="0 0 24 24"><rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/></svg>
+        </button>
+        <button class="rec-btn" id="recBtn" aria-label="Start recording">
+          <span class="core"></span>
+        </button>
+      </div>
+      <div class="hint" id="hint">Tap to record</div>
+    </div>
+  </div>
+
+  <div class="edit-bar" id="editBar">
+    <button class="btn ghost" id="selectAllBtn">Select All</button>
+    <span class="count" id="selCount">0 selected</span>
+    <button class="btn danger" id="deleteSelectedBtn" disabled>Delete</button>
+  </div>
+
+  <div class="perm" id="perm">
+    <h2>Microphone access</h2>
+    <p>Voice Memo needs your microphone to record. Tap below and allow access in the prompt.</p>
+    <button class="btn" id="permBtn">Enable microphone</button>
+  </div>
+
+  <div class="toast" id="toast"></div>
+</div>
+
+<div class="update-banner" id="updateBanner">New version available — tap to reload</div>
+
+<script>
+/* ─────────────────────────────────────────────────────────────
+   Voice Memo — vanilla JS, IndexedDB, MediaRecorder
+   No server. All audio stays on this device.
+   ───────────────────────────────────────────────────────────── */
+
+(() => {
+  'use strict';
+
+  // ── Storage layer ────────────────────────────────────────
+  const DB_NAME = 'voice-memo';
+  const DB_VERSION = 1;
+  const STORE = 'recordings';
+
+  function openDB() {
+    return new Promise((resolve, reject) => {
+      const req = indexedDB.open(DB_NAME, DB_VERSION);
+      req.onupgradeneeded = e => {
+        const db = e.target.result;
+        if (!db.objectStoreNames.contains(STORE)) {
+          const s = db.createObjectStore(STORE, { keyPath: 'id' });
+          s.createIndex('createdAt', 'createdAt');
+        }
+      };
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
+  }
+
+  async function dbAll() {
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(STORE, 'readonly');
+      const store = tx.objectStore(STORE);
+      const req = store.getAll();
+      req.onsuccess = () => resolve(req.result.sort((a, b) => b.createdAt - a.createdAt));
+      req.onerror = () => reject(req.error);
+    });
+  }
+  async function dbPut(item) {
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(STORE, 'readwrite');
+      tx.objectStore(STORE).put(item);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+  }
+  async function dbDelete(id) {
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(STORE, 'readwrite');
+      tx.objectStore(STORE).delete(id);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+  }
+  async function dbDeleteMany(ids) {
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(STORE, 'readwrite');
+      const store = tx.objectStore(STORE);
+      ids.forEach(id => store.delete(id));
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+  }
+
+  // ── Helpers ──────────────────────────────────────────────
+  const $ = sel => document.querySelector(sel);
+  const $$ = sel => Array.from(document.querySelectorAll(sel));
+
+  function uid() {
+    return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+  }
+
+  function fmtTime(seconds, withTenths = false) {
+    if (!Number.isFinite(seconds) || seconds < 0) seconds = 0;
+    const total = Math.max(0, seconds);
+    const h = Math.floor(total / 3600);
+    const m = Math.floor((total % 3600) / 60);
+    const s = Math.floor(total % 60);
+    const t = Math.floor((total - Math.floor(total)) * 10);
+    const mm = String(m).padStart(2, '0');
+    const ss = String(s).padStart(2, '0');
+    if (h > 0) return `${h}:${mm}:${ss}`;
+    if (withTenths) return `${mm}:${ss}.${t}`;
+    return `${mm}:${ss}`;
+  }
+
+  function fmtBytes(n) {
+    if (n < 1024) return n + ' B';
+    if (n < 1024 * 1024) return (n / 1024).toFixed(0) + ' KB';
+    return (n / (1024 * 1024)).toFixed(1) + ' MB';
+  }
+
+  function fmtDate(ms) {
+    const d = new Date(ms);
+    const now = new Date();
+    const time = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const sameDay = d.toDateString() === now.toDateString();
+    if (sameDay) return time;
+    const yest = new Date(now); yest.setDate(now.getDate() - 1);
+    if (d.toDateString() === yest.toDateString()) return 'Yesterday · ' + time;
+    const week = (now - d) < 7 * 86400000;
+    if (week) return d.toLocaleDateString([], { weekday: 'short' }) + ' · ' + time;
+    return d.toLocaleDateString([], { month: 'short', day: 'numeric' }) + ' · ' + time;
+  }
+
+  let toastTimer = null;
+  function toast(msg) {
+    const el = $('#toast');
+    el.textContent = msg;
+    el.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => el.classList.remove('show'), 1600);
+  }
+
+  // ── Recorder ─────────────────────────────────────────────
+  const recorder = {
+    stream: null,
+    mediaRecorder: null,
+    chunks: [],
+    mimeType: '',
+    audioCtx: null,
+    analyser: null,
+    sourceNode: null,
+    rafId: null,
+    startedAt: 0,
+    accumulated: 0, // ms recorded across pause/resume
+    pausedAt: 0,
+    state: 'idle', // idle | recording | paused
+    waveSamples: new Array(120).fill(0), // ring of recent peaks
+    timerId: null,
+  };
+
+  function pickMime() {
+    const candidates = [
+      'audio/webm;codecs=opus',
+      'audio/ogg;codecs=opus',
+      'audio/webm',
+      'audio/mp4;codecs=mp4a.40.2',
+      'audio/mp4',
+      'audio/aac',
+    ];
+    for (const m of candidates) {
+      try { if (window.MediaRecorder && MediaRecorder.isTypeSupported(m)) return m; } catch (_) {}
+    }
+    return '';
+  }
+
+  async function getStream() {
+    if (recorder.stream) return recorder.stream;
+    const constraints = {
+      audio: {
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true,
+        channelCount: 1,
+        sampleRate: 48000,
+      },
+      video: false,
+    };
+    recorder.stream = await navigator.mediaDevices.getUserMedia(constraints);
+    return recorder.stream;
+  }
+
+  function setupAnalyser(stream) {
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    if (!recorder.audioCtx) recorder.audioCtx = new Ctx();
+    if (recorder.audioCtx.state === 'suspended') recorder.audioCtx.resume();
+    recorder.sourceNode = recorder.audioCtx.createMediaStreamSource(stream);
+    recorder.analyser = recorder.audioCtx.createAnalyser();
+    recorder.analyser.fftSize = 1024;
+    recorder.analyser.smoothingTimeConstant = 0.7;
+    recorder.sourceNode.connect(recorder.analyser);
+  }
+
+  function teardownAnalyser() {
+    try { recorder.sourceNode && recorder.sourceNode.disconnect(); } catch {}
+    recorder.sourceNode = null;
+    recorder.analyser = null;
+    cancelAnimationFrame(recorder.rafId);
+    recorder.rafId = null;
+  }
+
+  function drawWaveLoop() {
+    const canvas = $('#wave');
+    const ctx = canvas.getContext('2d');
+    const buf = new Uint8Array(recorder.analyser ? recorder.analyser.fftSize : 1024);
+    let lastDraw = 0;
+    // Lower frame rate is friendlier on e-ink (Kaleido 3 partial refresh)
+    // and saves battery on phones. 15 fps still feels live for a meter.
+    const FRAME_MS = 66;
+    const render = (t) => {
+      recorder.rafId = requestAnimationFrame(render);
+      if (t - lastDraw < FRAME_MS) return;
+      lastDraw = t;
+
+      if (recorder.analyser && recorder.state === 'recording') {
+        recorder.analyser.getByteTimeDomainData(buf);
+        let peak = 0;
+        for (let i = 0; i < buf.length; i++) {
+          const v = Math.abs(buf[i] - 128);
+          if (v > peak) peak = v;
+        }
+        recorder.waveSamples.push(peak / 128);
+        if (recorder.waveSamples.length > 120) recorder.waveSamples.shift();
+      }
+
+      const w = canvas.width;
+      const h = canvas.height;
+      ctx.clearRect(0, 0, w, h);
+
+      // baseline
+      ctx.strokeStyle = 'rgba(0,0,0,0.15)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(0, h / 2);
+      ctx.lineTo(w, h / 2);
+      ctx.stroke();
+
+      // bars
+      const samples = recorder.waveSamples;
+      const n = samples.length;
+      const gap = 3;
+      const barW = (w - (n - 1) * gap) / n;
+      ctx.fillStyle = '#000';
+      for (let i = 0; i < n; i++) {
+        const a = samples[i];
+        const bh = Math.max(2, a * (h * 0.95));
+        const x = i * (barW + gap);
+        const y = (h - bh) / 2;
+        ctx.fillRect(x, y, barW, bh);
+      }
+    };
+    recorder.rafId = requestAnimationFrame(render);
+  }
+
+  function elapsedMs() {
+    if (recorder.state === 'recording') {
+      return recorder.accumulated + (Date.now() - recorder.startedAt);
+    }
+    return recorder.accumulated;
+  }
+
+  function tickTimer() {
+    const t = elapsedMs() / 1000;
+    $('#timer').textContent = fmtTime(t, true);
+  }
+
+  async function startRecording() {
+    try {
+      const stream = await getStream();
+      setupAnalyser(stream);
+
+      const mime = pickMime();
+      const opts = mime ? { mimeType: mime, audioBitsPerSecond: 128000 } : { audioBitsPerSecond: 128000 };
+      let mr;
+      try { mr = new MediaRecorder(stream, opts); }
+      catch (_) { mr = new MediaRecorder(stream); }
+      recorder.mediaRecorder = mr;
+      recorder.mimeType = mr.mimeType || mime || 'audio/webm';
+      recorder.chunks = [];
+
+      mr.addEventListener('dataavailable', e => {
+        if (e.data && e.data.size > 0) recorder.chunks.push(e.data);
+      });
+      mr.addEventListener('stop', onStopped);
+
+      recorder.accumulated = 0;
+      recorder.startedAt = Date.now();
+      recorder.state = 'recording';
+      mr.start(250); // collect chunks every 250ms
+
+      document.body.classList.add('recording');
+      $('#timer').classList.remove('idle', 'paused');
+      $('#hint').textContent = 'Recording… tap pause or stop';
+      $('#recBtn').setAttribute('aria-label', 'Stop recording');
+      $('#pauseBtn').setAttribute('aria-label', 'Pause recording');
+      $('#editBtn').disabled = true;
+      recorder.waveSamples = new Array(120).fill(0);
+      drawWaveLoop();
+      recorder.timerId = setInterval(tickTimer, 100);
+      tickTimer();
+    } catch (err) {
+      console.error('record error', err);
+      if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+        showPermPrompt();
+      } else {
+        toast('Microphone unavailable');
+      }
+    }
+  }
+
+  function pauseRecording() {
+    const mr = recorder.mediaRecorder;
+    if (!mr || recorder.state !== 'recording') return;
+    try { mr.pause(); } catch (_) {}
+    recorder.accumulated += Date.now() - recorder.startedAt;
+    recorder.state = 'paused';
+    document.body.classList.add('paused');
+    $('#timer').classList.add('paused');
+    $('#hint').textContent = 'Paused — tap pause again to continue';
+    $('#pauseBtn').setAttribute('aria-label', 'Resume recording');
+    clearInterval(recorder.timerId);
+    tickTimer();
+  }
+
+  function resumeRecording() {
+    const mr = recorder.mediaRecorder;
+    if (!mr || recorder.state !== 'paused') return;
+    try { mr.resume(); } catch (_) {}
+    recorder.startedAt = Date.now();
+    recorder.state = 'recording';
+    document.body.classList.remove('paused');
+    $('#timer').classList.remove('paused');
+    $('#hint').textContent = 'Recording… tap pause or stop';
+    $('#pauseBtn').setAttribute('aria-label', 'Pause recording');
+    recorder.timerId = setInterval(tickTimer, 100);
+  }
+
+  function stopRecording() {
+    const mr = recorder.mediaRecorder;
+    if (!mr) return;
+    if (recorder.state === 'recording') {
+      recorder.accumulated += Date.now() - recorder.startedAt;
+    }
+    recorder.state = 'idle';
+    try { mr.stop(); } catch (_) {}
+    clearInterval(recorder.timerId);
+    recorder.timerId = null;
+  }
+
+  async function onStopped() {
+    document.body.classList.remove('recording', 'paused');
+    teardownAnalyser();
+    $('#timer').classList.add('idle');
+    $('#timer').textContent = '00:00.0';
+    $('#hint').textContent = 'Tap to record';
+    $('#editBtn').disabled = false;
+    $('#recBtn').setAttribute('aria-label', 'Start recording');
+
+    const blob = new Blob(recorder.chunks, { type: recorder.mimeType });
+    recorder.chunks = [];
+    const durationSec = recorder.accumulated / 1000;
+    recorder.accumulated = 0;
+
+    if (blob.size < 200) {
+      toast('Recording too short');
+      return;
+    }
+
+    // probe true duration from the audio element where possible
+    // — racing with a 3 s timeout so a stuck timeupdate event can never freeze save
+    const trueDur = await Promise.race([
+      probeDuration(blob),
+      new Promise(res => setTimeout(() => res(durationSec), 3000)),
+    ]).catch(() => durationSec);
+    const finalDur = Math.max(trueDur, durationSec, 0.1);
+
+    const item = {
+      id: uid(),
+      name: defaultName(),
+      mimeType: recorder.mimeType,
+      blob,
+      bytes: blob.size,
+      duration: finalDur,
+      createdAt: Date.now(),
+    };
+    try {
+      await dbPut(item);
+      await render();
+      toast('Saved');
+    } catch (err) {
+      console.error('IndexedDB write failed', err);
+      toast('Could not save — storage error');
+    }
+  }
+
+  function probeDuration(blob) {
+    return new Promise((resolve, reject) => {
+      const url = URL.createObjectURL(blob);
+      const a = new Audio();
+      a.preload = 'metadata';
+      a.src = url;
+      const cleanup = () => URL.revokeObjectURL(url);
+      a.addEventListener('loadedmetadata', () => {
+        // Some browsers report Infinity for webm/opus blobs — workaround
+        if (!Number.isFinite(a.duration) || a.duration === 0) {
+          a.currentTime = 1e10;
+          a.addEventListener('timeupdate', () => {
+            const d = a.duration;
+            cleanup();
+            resolve(Number.isFinite(d) ? d : 0);
+          }, { once: true });
+        } else {
+          cleanup();
+          resolve(a.duration);
+        }
+      }, { once: true });
+      a.addEventListener('error', () => { cleanup(); reject(new Error('metadata load')); }, { once: true });
+    });
+  }
+
+  function defaultName() {
+    // Keep names short — date and time are already shown in the row meta,
+    // so the name just needs to disambiguate same-day recordings by counter.
+    const d = new Date();
+    const today = d.toLocaleDateString([], { month: 'short', day: 'numeric' });
+    return `Recording ${today}`;
+  }
+
+  // ── Permissions UI ──────────────────────────────────────
+  function showPermPrompt() {
+    $('#perm').classList.add('show');
+  }
+  function hidePermPrompt() {
+    $('#perm').classList.remove('show');
+  }
+
+  // ── List rendering ──────────────────────────────────────
+  let items = [];
+  let openId = null;
+  let selected = new Set();
+  let editing = false;
+
+  // current playback
+  const playback = {
+    audio: null,
+    rowId: null,
+    raf: null,
+  };
+
+  async function render() {
+    try {
+      items = await dbAll();
+    } catch (err) {
+      console.error('IndexedDB read failed', err);
+      items = [];
+      toast('Storage unavailable — try a non-private browser window');
+    }
+    const list = $('#list');
+    list.innerHTML = '';
+
+    if (items.length === 0) {
+      $('#empty').style.display = 'block';
+      $('#editBtn').style.display = 'none';
+      updateEditBar();
+      return;
+    }
+    $('#empty').style.display = 'none';
+    $('#editBtn').style.display = '';
+
+    for (const it of items) {
+      list.appendChild(renderRow(it));
+    }
+    updateEditBar();
+  }
+
+  function renderRow(it) {
+    const li = document.createElement('li');
+    li.className = 'row';
+    li.dataset.id = it.id;
+    if (selected.has(it.id)) li.classList.add('selected');
+    if (openId === it.id) li.classList.add('open');
+
+    li.innerHTML = `
+      <div class="top">
+        <span class="check" aria-hidden="true"></span>
+        <input class="name" value="" readonly />
+        <button class="quick-play" aria-label="Play"></button>
+      </div>
+      <div class="meta">
+        <span class="date"></span>
+        <span class="dot"></span>
+        <span class="dur"></span>
+        <span class="dot bytes-dot" hidden></span>
+        <span class="bytes" hidden></span>
+      </div>
+      <div class="player">
+        <input class="scrub" type="range" min="0" max="1000" value="0" step="1" aria-label="Seek" />
+        <div class="scrub-times"><span class="cur">00:00</span><span class="rem">-00:00</span></div>
+        <div class="controls">
+          <button class="ctrl back15" aria-label="Skip back 15 seconds">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/>
+            </svg>
+            <span class="skip-num" style="margin-top:2px">15</span>
+          </button>
+          <button class="ctrl big play" aria-label="Play">
+            <svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+          </button>
+          <button class="ctrl fwd15" aria-label="Skip forward 15 seconds">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/>
+            </svg>
+            <span class="skip-num" style="margin-top:2px">15</span>
+          </button>
+        </div>
+        <div class="row-actions">
+          <button class="btn ghost rename">Rename</button>
+          <button class="btn danger del">Delete</button>
+        </div>
+      </div>
+    `;
+
+    li.querySelector('.name').value = it.name;
+    li.querySelector('.date').textContent = fmtDate(it.createdAt);
+    li.querySelector('.dur').textContent = fmtTime(it.duration);
+    if (it.bytes) {
+      const bytesEl = li.querySelector('.bytes');
+      bytesEl.textContent = fmtBytes(it.bytes);
+      bytesEl.hidden = false;
+      li.querySelector('.bytes-dot').hidden = false;
+    }
+
+    const playBtn = li.querySelector('.quick-play');
+    setQuickPlayIcon(playBtn, false);
+
+    // wire row events
+    li.querySelector('.top').addEventListener('click', (e) => {
+      if (e.target.closest('.quick-play')) return;
+      if (e.target.closest('.name')) return;
+      if (editing) {
+        toggleSelected(it.id);
+        return;
+      }
+      // toggle open
+      if (openId === it.id) {
+        openId = null;
+        stopPlayback();
+      } else {
+        openId = it.id;
+      }
+      render();
+    });
+
+    playBtn.addEventListener('click', e => {
+      e.stopPropagation();
+      togglePlayback(it.id);
+    });
+
+    li.querySelector('.rename').addEventListener('click', () => {
+      const input = li.querySelector('.name');
+      input.removeAttribute('readonly');
+      input.focus();
+      input.select();
+    });
+    li.querySelector('.name').addEventListener('blur', async (e) => {
+      const v = e.target.value.trim();
+      e.target.setAttribute('readonly', '');
+      if (v && v !== it.name) {
+        it.name = v;
+        await dbPut(it);
+      } else {
+        e.target.value = it.name;
+      }
+    });
+    li.querySelector('.name').addEventListener('keydown', e => {
+      if (e.key === 'Enter') e.target.blur();
+      if (e.key === 'Escape') { e.target.value = it.name; e.target.blur(); }
+    });
+
+    li.querySelector('.del').addEventListener('click', async () => {
+      if (!confirm(`Delete "${it.name}"?`)) return;
+      stopPlayback();
+      await dbDelete(it.id);
+      if (openId === it.id) openId = null;
+      selected.delete(it.id);
+      await render();
+      toast('Deleted');
+    });
+
+    li.querySelector('.play').addEventListener('click', () => togglePlayback(it.id));
+    li.querySelector('.back15').addEventListener('click', () => seekRel(-15));
+    li.querySelector('.fwd15').addEventListener('click', () => seekRel(15));
+    li.querySelector('.scrub').addEventListener('input', e => {
+      if (playback.rowId !== it.id || !playback.audio) return;
+      const pct = e.target.value / 1000;
+      playback.audio.currentTime = pct * (playback.audio.duration || it.duration || 0);
+    });
+
+    return li;
+  }
+
+  function setQuickPlayIcon(btn, isPlaying) {
+    btn.classList.toggle('playing', isPlaying);
+    btn.innerHTML = isPlaying
+      ? '<svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/></svg>'
+      : '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>';
+  }
+
+  function togglePlayback(id) {
+    if (playback.rowId === id && playback.audio && !playback.audio.paused) {
+      playback.audio.pause();
+      return;
+    }
+    if (playback.rowId === id && playback.audio && playback.audio.paused) {
+      playback.audio.play();
+      return;
+    }
+    startPlayback(id);
+  }
+
+  function startPlayback(id) {
+    stopPlayback();
+    const it = items.find(x => x.id === id);
+    if (!it) return;
+    const url = URL.createObjectURL(it.blob);
+    const audio = new Audio(url);
+    audio.preload = 'auto';
+    playback.audio = audio;
+    playback.rowId = id;
+
+    audio.addEventListener('play', () => updatePlayUI(id, true));
+    audio.addEventListener('pause', () => updatePlayUI(id, false));
+    audio.addEventListener('ended', () => {
+      updatePlayUI(id, false);
+      cancelAnimationFrame(playback.raf);
+    });
+    audio.addEventListener('timeupdate', () => updateScrubber(id));
+    audio.addEventListener('loadedmetadata', () => updateScrubber(id));
+
+    audio.play().catch(err => {
+      console.warn('play error', err);
+      toast('Playback failed');
+    });
+    // ensure row is open so controls are visible
+    if (openId !== id) {
+      openId = id;
+      render();
+    }
+    cancelAnimationFrame(playback.raf);
+    const tick = () => { updateScrubber(id); playback.raf = requestAnimationFrame(tick); };
+    tick();
+  }
+
+  function updatePlayUI(id, playing) {
+    const li = document.querySelector(`li.row[data-id="${id}"]`);
+    if (!li) return;
+    const qb = li.querySelector('.quick-play');
+    setQuickPlayIcon(qb, playing);
+    const big = li.querySelector('.ctrl.big');
+    if (big) {
+      big.innerHTML = playing
+        ? '<svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/></svg>'
+        : '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>';
+      big.setAttribute('aria-label', playing ? 'Pause' : 'Play');
+    }
+  }
+
+  function updateScrubber(id) {
+    if (!playback.audio || playback.rowId !== id) return;
+    const li = document.querySelector(`li.row[data-id="${id}"]`);
+    if (!li) return;
+    const it = items.find(x => x.id === id);
+    const dur = (Number.isFinite(playback.audio.duration) && playback.audio.duration > 0)
+      ? playback.audio.duration
+      : (it ? it.duration : 0);
+    const cur = playback.audio.currentTime || 0;
+    const pct = dur ? (cur / dur) * 1000 : 0;
+    const scrub = li.querySelector('.scrub');
+    if (scrub && document.activeElement !== scrub) scrub.value = String(pct);
+    li.querySelector('.cur').textContent = fmtTime(cur);
+    li.querySelector('.rem').textContent = '-' + fmtTime(Math.max(0, dur - cur));
+  }
+
+  function seekRel(deltaSec) {
+    if (!playback.audio) return;
+    const dur = playback.audio.duration || 0;
+    let t = playback.audio.currentTime + deltaSec;
+    if (t < 0) t = 0;
+    if (dur && t > dur) t = dur;
+    playback.audio.currentTime = t;
+  }
+
+  function stopPlayback() {
+    if (playback.audio) {
+      try { playback.audio.pause(); } catch {}
+      try { URL.revokeObjectURL(playback.audio.src); } catch {}
+      const id = playback.rowId;
+      if (id) updatePlayUI(id, false);
+    }
+    cancelAnimationFrame(playback.raf);
+    playback.audio = null;
+    playback.rowId = null;
+    playback.raf = null;
+  }
+
+  // ── Edit / multi-select ─────────────────────────────────
+  function toggleEditing(force) {
+    editing = (typeof force === 'boolean') ? force : !editing;
+    document.body.classList.toggle('editing', editing);
+    if (!editing) selected.clear();
+    $('#editBtn').textContent = editing ? 'Done' : 'Edit';
+    if (editing) {
+      openId = null;
+      stopPlayback();
+    }
+    render();
+  }
+
+  function toggleSelected(id) {
+    if (selected.has(id)) selected.delete(id);
+    else selected.add(id);
+    const li = document.querySelector(`li.row[data-id="${id}"]`);
+    if (li) li.classList.toggle('selected', selected.has(id));
+    updateEditBar();
+  }
+
+  function updateEditBar() {
+    const n = selected.size;
+    const total = items.length;
+    const all = n > 0 && n === total;
+    $('#selCount').textContent = n === 0 ? 'None selected' : `${n} selected`;
+    $('#selectAllBtn').textContent = all ? 'Deselect All' : 'Select All';
+    $('#deleteSelectedBtn').disabled = n === 0;
+    $('#deleteSelectedBtn').textContent = (n === total && n > 0) ? `Delete All (${n})` : (n > 0 ? `Delete (${n})` : 'Delete');
+  }
+
+  // ── Wire UI ─────────────────────────────────────────────
+  function bind() {
+    const recBtn = $('#recBtn');
+    const pauseBtn = $('#pauseBtn');
+
+    recBtn.addEventListener('click', async () => {
+      if (recorder.state === 'idle') {
+        await startRecording();
+      } else {
+        // recording or paused → stop
+        stopRecording();
+      }
+    });
+
+    pauseBtn.addEventListener('click', () => {
+      if (recorder.state === 'recording') pauseRecording();
+      else if (recorder.state === 'paused') resumeRecording();
+    });
+
+    $('#editBtn').addEventListener('click', () => toggleEditing());
+
+    $('#selectAllBtn').addEventListener('click', () => {
+      const total = items.length;
+      if (selected.size === total) selected.clear();
+      else items.forEach(it => selected.add(it.id));
+      render();
+    });
+
+    $('#deleteSelectedBtn').addEventListener('click', async () => {
+      if (selected.size === 0) return;
+      const all = selected.size === items.length;
+      const msg = all ? `Delete all ${items.length} recordings? This can't be undone.`
+                      : `Delete ${selected.size} recording${selected.size > 1 ? 's' : ''}?`;
+      if (!confirm(msg)) return;
+      stopPlayback();
+      await dbDeleteMany(Array.from(selected));
+      selected.clear();
+      toggleEditing(false);
+      toast('Deleted');
+    });
+
+    $('#permBtn').addEventListener('click', async () => {
+      try {
+        await getStream();
+        hidePermPrompt();
+        await startRecording();
+      } catch (err) {
+        toast('Microphone denied');
+      }
+    });
+
+    // Resize canvas for sharpness
+    const wave = $('#wave');
+    const fitWave = () => {
+      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      const r = wave.getBoundingClientRect();
+      wave.width = Math.floor(r.width * dpr);
+      wave.height = Math.floor(r.height * dpr);
+      wave.getContext('2d').setTransform(dpr, 0, 0, dpr, 0, 0);
+      // un-set transform for our manual draw (we'll draw using device pixels)
+      wave.getContext('2d').setTransform(1, 0, 0, 1, 0, 0);
+    };
+    fitWave();
+    window.addEventListener('resize', fitWave);
+
+    // Service worker — register and ask waiting workers to skip waiting
+    // so a fresh build takes over on the next reload.
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/sw.js').then(reg => {
+        reg.addEventListener('updatefound', () => {
+          const w = reg.installing;
+          if (!w) return;
+          w.addEventListener('statechange', () => {
+            if (w.state === 'installed' && navigator.serviceWorker.controller) {
+              // a new SW is waiting — surface the banner
+              $('#updateBanner').style.display = 'block';
+            }
+          });
+        });
+      }).catch(() => {});
+    }
+
+    $('#updateBanner').addEventListener('click', async () => {
+      try {
+        const reg = await navigator.serviceWorker.getRegistration();
+        if (reg && reg.waiting) reg.waiting.postMessage('skip-waiting');
+      } catch {}
+      location.reload();
+    });
+
+    // page-leave guard while recording
+    window.addEventListener('beforeunload', e => {
+      if (recorder.state !== 'idle') {
+        e.preventDefault();
+        e.returnValue = '';
+      }
+    });
+  }
+
+  // ── Build-stamp / auto-reload banner ────────────────────
+  // Polls /build-stamp every 60s. If the server's stamp changes, prompts
+  // a reload — fixes iOS PWA stale-cache pain.
+  async function checkBuildStamp() {
+    try {
+      const r = await fetch('/build-stamp', { cache: 'no-store' });
+      if (!r.ok) return null;
+      const { stamp } = await r.json();
+      return Number(stamp) || null;
+    } catch { return null; }
+  }
+
+  async function startBuildPoller() {
+    let initial = await checkBuildStamp();
+    if (initial) {
+      const tail = String(initial).slice(-6);
+      $('#buildPill').textContent = 'v0.1·' + tail;
+    } else {
+      $('#buildPill').textContent = 'v0.1';
+      return;
+    }
+    setInterval(async () => {
+      // Don't interrupt while recording
+      if (recorder.state !== 'idle') return;
+      const now = await checkBuildStamp();
+      if (now && now !== initial) {
+        $('#updateBanner').style.display = 'block';
+      }
+    }, 60000);
+  }
+
+  // ── Boot ────────────────────────────────────────────────
+  document.addEventListener('DOMContentLoaded', async () => {
+    bind();
+    await render();
+    startBuildPoller();
+  });
+})();
+</script>
+</body>
+</html>

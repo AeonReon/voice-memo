@@ -1,0 +1,14 @@
+{
+  "name": "voice-memo",
+  "version": "0.1.0",
+  "description": "Personal voice recorder PWA — light/e-ink theme. Records stay on device.",
+  "private": true,
+  "scripts": {
+    "vercel-build": "node scripts/inject-version.js",
+    "dev": "node server.js",
+    "start": "node server.js"
+  },
+  "devDependencies": {
+    "express": "^4.19.2"
+  }
+}

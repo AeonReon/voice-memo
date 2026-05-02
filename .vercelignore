@@ -1,0 +1,10 @@
+node_modules
+.qa-screenshots
+.qa-run.log
+.qa-run.html
+.qa-browser.mjs
+BUG_REPORT.md
+QA_CHECKLIST.md
+project.txt
+README.md
+.DS_Store

@@ -1,0 +1,9 @@
+node_modules/
+.DS_Store
+*.log
+.env
+.qa-screenshots/
+.qa-run.log
+.qa-run.html
+.qa-browser.mjs
+.vercel/
