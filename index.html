@@ -382,7 +382,7 @@
   <header>
     <h1 id="title">Voice Memos</h1>
     <div class="toolbar" id="toolbar">
-      <span class="build-pill" id="buildPill">v0.3</span>
+      <span class="build-pill" id="buildPill">v0.4</span>
       <button class="btn ghost" id="editBtn">Edit</button>
     </div>
   </header>
@@ -526,6 +526,10 @@
     return 'webm';
   }
 
+  const isIOS = () =>
+    /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+    (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+
   function safeFilename(name, ext) {
     const clean = (name || 'recording').replace(/[\\/:*?"<>|\n\r\t]/g, '').trim() || 'recording';
     return `${clean}.${ext}`;
@@ -578,13 +582,16 @@
   };
 
   function pickMime() {
+    // Prefer AAC-in-MP4 — iOS Safari treats .webm as "video" in the share
+    // sheet and can't preview it, breaking Save-to-Files. .m4a is what
+    // Apple Voice Memos uses and plays cleanly everywhere else too.
     const candidates = [
-      'audio/webm;codecs=opus',
-      'audio/ogg;codecs=opus',
-      'audio/webm',
       'audio/mp4;codecs=mp4a.40.2',
       'audio/mp4',
       'audio/aac',
+      'audio/webm;codecs=opus',
+      'audio/ogg;codecs=opus',
+      'audio/webm',
     ];
     for (const m of candidates) {
       try { if (window.MediaRecorder && MediaRecorder.isTypeSupported(m)) return m; } catch (_) {}
@@ -1015,32 +1022,7 @@
       if (e.target.hasAttribute('readonly')) startRename();
     });
 
-    li.querySelector('.download').addEventListener('click', () => {
-      const ext = fileExt(it.mimeType);
-      const url = URL.createObjectURL(it.blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = safeFilename(it.name, ext);
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      setTimeout(() => URL.revokeObjectURL(url), 1000);
-    });
-
-    li.querySelector('.share').addEventListener('click', async () => {
-      const ext = fileExt(it.mimeType);
-      const filename = safeFilename(it.name, ext);
-      const file = new File([it.blob], filename, { type: it.mimeType || 'audio/webm' });
-      try {
-        if (navigator.canShare && navigator.canShare({ files: [file] })) {
-          await navigator.share({ files: [file], title: it.name, text: it.name });
-          return;
-        }
-      } catch (err) {
-        if (err && err.name === 'AbortError') return;
-        console.warn('share failed', err);
-      }
-      // Fallback — trigger download
+    const anchorDownload = (filename) => {
       const url = URL.createObjectURL(it.blob);
       const a = document.createElement('a');
       a.href = url;
@@ -1049,7 +1031,42 @@
       a.click();
       a.remove();
       setTimeout(() => URL.revokeObjectURL(url), 1000);
-      toast('Sharing not supported — downloaded instead');
+    };
+
+    const shareWithFiles = async (filename) => {
+      const file = new File([it.blob], filename, { type: it.mimeType || 'audio/mp4' });
+      if (!navigator.canShare || !navigator.canShare({ files: [file] })) return false;
+      try {
+        await navigator.share({ files: [file], title: it.name });
+        return true;
+      } catch (err) {
+        if (err && err.name === 'AbortError') return true; // user cancelled — counts as handled
+        console.warn('share failed', err);
+        return false;
+      }
+    };
+
+    li.querySelector('.download').addEventListener('click', async () => {
+      const filename = safeFilename(it.name, fileExt(it.mimeType));
+      // iOS Safari ignores <a download> for blob URLs and tries to navigate
+      // to the blob instead (black "Safari can't open the page"). The share
+      // sheet's "Save to Files" is the actual download path on iOS.
+      if (isIOS()) {
+        toast('Pick "Save to Files" to download');
+        const shared = await shareWithFiles(filename);
+        if (!shared) anchorDownload(filename);
+        return;
+      }
+      anchorDownload(filename);
+    });
+
+    li.querySelector('.share').addEventListener('click', async () => {
+      const filename = safeFilename(it.name, fileExt(it.mimeType));
+      const shared = await shareWithFiles(filename);
+      if (!shared) {
+        anchorDownload(filename);
+        toast('Sharing not supported — downloaded instead');
+      }
     });
     li.querySelector('.name').addEventListener('blur', async (e) => {
       const v = e.target.value.trim();
@@ -1338,9 +1355,9 @@
     let initial = await checkBuildStamp();
     if (initial) {
       const tail = String(initial).slice(-6);
-      $('#buildPill').textContent = 'v0.3·' + tail;
+      $('#buildPill').textContent = 'v0.4·' + tail;
     } else {
-      $('#buildPill').textContent = 'v0.3';
+      $('#buildPill').textContent = 'v0.4';
       return;
     }
     setInterval(async () => {
