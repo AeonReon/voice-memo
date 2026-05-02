@@ -382,7 +382,7 @@
   <header>
     <h1 id="title">Voice Memos</h1>
     <div class="toolbar" id="toolbar">
-      <span class="build-pill" id="buildPill">v0.2</span>
+      <span class="build-pill" id="buildPill">v0.3</span>
       <button class="btn ghost" id="editBtn">Edit</button>
     </div>
   </header>
@@ -594,11 +594,14 @@
 
   async function getStream() {
     if (recorder.stream) return recorder.stream;
+    // Voice-processing flags off so music + singing record cleanly.
+    // With NS on, sustained notes and sibilants get treated as noise and
+    // come out warbly / lispy — fine for calls, ruinous for memos.
     const constraints = {
       audio: {
-        echoCancellation: true,
-        noiseSuppression: true,
-        autoGainControl: true,
+        echoCancellation: false,
+        noiseSuppression: false,
+        autoGainControl: false,
         channelCount: 1,
         sampleRate: 48000,
       },
@@ -709,7 +712,7 @@
       setupAnalyser(stream);
 
       const mime = pickMime();
-      const opts = mime ? { mimeType: mime, audioBitsPerSecond: 128000 } : { audioBitsPerSecond: 128000 };
+      const opts = mime ? { mimeType: mime, audioBitsPerSecond: 192000 } : { audioBitsPerSecond: 192000 };
       let mr;
       try { mr = new MediaRecorder(stream, opts); }
       catch (_) { mr = new MediaRecorder(stream); }
@@ -1335,9 +1338,9 @@
     let initial = await checkBuildStamp();
     if (initial) {
       const tail = String(initial).slice(-6);
-      $('#buildPill').textContent = 'v0.2·' + tail;
+      $('#buildPill').textContent = 'v0.3·' + tail;
     } else {
-      $('#buildPill').textContent = 'v0.2';
+      $('#buildPill').textContent = 'v0.3';
       return;
     }
     setInterval(async () => {
