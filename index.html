@@ -220,12 +220,15 @@
     pointer-events: none;
   }
   .row-actions {
-    display: flex; justify-content: space-between; align-items: center;
-    padding-top: 6px;
+    display: flex; flex-wrap: wrap; gap: 6px; align-items: center;
+    padding-top: 8px;
     border-top: 1px solid var(--rule);
     margin-top: 8px;
   }
-  .row-actions button { font-size: 13px; }
+  .row-actions button { font-size: 13px; padding: 8px 12px; }
+  .row-actions .spacer { flex: 1 1 auto; }
+  li.row .name:not([readonly]) { background: var(--paper); padding: 4px 8px; border: 1px solid var(--rule-strong); border-radius: 6px; }
+  li.row.open .name { cursor: text; }
 
   /* ── Recorder dock ─────────────────────────────────────── */
   .dock {
@@ -379,7 +382,7 @@
   <header>
     <h1 id="title">Voice Memos</h1>
     <div class="toolbar" id="toolbar">
-      <span class="build-pill" id="buildPill">v0.1</span>
+      <span class="build-pill" id="buildPill">v0.2</span>
       <button class="btn ghost" id="editBtn">Edit</button>
     </div>
   </header>
@@ -515,6 +518,19 @@
     return `${mm}:${ss}`;
   }
 
+  function fileExt(mimeType) {
+    const t = (mimeType || '').toLowerCase();
+    if (t.includes('mp4') || t.includes('aac')) return 'm4a';
+    if (t.includes('ogg')) return 'ogg';
+    if (t.includes('wav')) return 'wav';
+    return 'webm';
+  }
+
+  function safeFilename(name, ext) {
+    const clean = (name || 'recording').replace(/[\\/:*?"<>|\n\r\t]/g, '').trim() || 'recording';
+    return `${clean}.${ext}`;
+  }
+
   function fmtBytes(n) {
     if (n < 1024) return n + ' B';
     if (n < 1024 * 1024) return (n / 1024).toFixed(0) + ' KB';
@@ -609,6 +625,17 @@
     recorder.analyser = null;
     cancelAnimationFrame(recorder.rafId);
     recorder.rafId = null;
+  }
+
+  function releaseStream() {
+    if (recorder.stream) {
+      try { recorder.stream.getTracks().forEach(t => t.stop()); } catch {}
+      recorder.stream = null;
+    }
+    if (recorder.audioCtx) {
+      try { recorder.audioCtx.close(); } catch {}
+      recorder.audioCtx = null;
+    }
   }
 
   function drawWaveLoop() {
@@ -762,6 +789,7 @@
   async function onStopped() {
     document.body.classList.remove('recording', 'paused');
     teardownAnalyser();
+    releaseStream();
     $('#timer').classList.add('idle');
     $('#timer').textContent = '00:00.0';
     $('#hint').textContent = 'Tap to record';
@@ -927,6 +955,9 @@
         </div>
         <div class="row-actions">
           <button class="btn ghost rename">Rename</button>
+          <button class="btn ghost download">Download</button>
+          <button class="btn ghost share">Share</button>
+          <span class="spacer"></span>
           <button class="btn danger del">Delete</button>
         </div>
       </div>
@@ -968,11 +999,54 @@
       togglePlayback(it.id);
     });
 
-    li.querySelector('.rename').addEventListener('click', () => {
+    const startRename = () => {
       const input = li.querySelector('.name');
       input.removeAttribute('readonly');
       input.focus();
       input.select();
+    };
+    li.querySelector('.rename').addEventListener('click', startRename);
+    li.querySelector('.name').addEventListener('click', e => {
+      if (editing) return;
+      if (openId !== it.id) return;
+      if (e.target.hasAttribute('readonly')) startRename();
+    });
+
+    li.querySelector('.download').addEventListener('click', () => {
+      const ext = fileExt(it.mimeType);
+      const url = URL.createObjectURL(it.blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = safeFilename(it.name, ext);
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    });
+
+    li.querySelector('.share').addEventListener('click', async () => {
+      const ext = fileExt(it.mimeType);
+      const filename = safeFilename(it.name, ext);
+      const file = new File([it.blob], filename, { type: it.mimeType || 'audio/webm' });
+      try {
+        if (navigator.canShare && navigator.canShare({ files: [file] })) {
+          await navigator.share({ files: [file], title: it.name, text: it.name });
+          return;
+        }
+      } catch (err) {
+        if (err && err.name === 'AbortError') return;
+        console.warn('share failed', err);
+      }
+      // Fallback — trigger download
+      const url = URL.createObjectURL(it.blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      toast('Sharing not supported — downloaded instead');
     });
     li.querySelector('.name').addEventListener('blur', async (e) => {
       const v = e.target.value.trim();
@@ -1261,9 +1335,9 @@
     let initial = await checkBuildStamp();
     if (initial) {
       const tail = String(initial).slice(-6);
-      $('#buildPill').textContent = 'v0.1·' + tail;
+      $('#buildPill').textContent = 'v0.2·' + tail;
     } else {
-      $('#buildPill').textContent = 'v0.1';
+      $('#buildPill').textContent = 'v0.2';
       return;
     }
     setInterval(async () => {
