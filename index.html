@@ -382,7 +382,7 @@
   <header>
     <h1 id="title">Voice Memos</h1>
     <div class="toolbar" id="toolbar">
-      <span class="build-pill" id="buildPill">v0.4</span>
+      <span class="build-pill" id="buildPill">v0.5</span>
       <button class="btn ghost" id="editBtn">Edit</button>
     </div>
   </header>
@@ -581,22 +581,33 @@
     timerId: null,
   };
 
-  function pickMime() {
-    // Prefer AAC-in-MP4 — iOS Safari treats .webm as "video" in the share
-    // sheet and can't preview it, breaking Save-to-Files. .m4a is what
-    // Apple Voice Memos uses and plays cleanly everywhere else too.
+  // Prefer AAC-in-MP4 so iOS treats the file as proper audio in the share
+  // sheet and Save-to-Files works. Falls through to webm only if every
+  // mp4 variant is genuinely unsupported. isTypeSupported is unreliable on
+  // iOS (returns true then the constructor throws), so we actually try to
+  // build the recorder with each candidate instead of trusting the probe.
+  function tryCreateRecorder(stream) {
     const candidates = [
       'audio/mp4;codecs=mp4a.40.2',
+      'audio/mp4;codecs=aac',
       'audio/mp4',
       'audio/aac',
       'audio/webm;codecs=opus',
       'audio/ogg;codecs=opus',
       'audio/webm',
     ];
-    for (const m of candidates) {
-      try { if (window.MediaRecorder && MediaRecorder.isTypeSupported(m)) return m; } catch (_) {}
+    for (const mime of candidates) {
+      if (!window.MediaRecorder) break;
+      try {
+        if (!MediaRecorder.isTypeSupported(mime)) continue;
+      } catch (_) { continue; }
+      try {
+        const mr = new MediaRecorder(stream, { mimeType: mime, audioBitsPerSecond: 192000 });
+        return { mr, mime: mr.mimeType || mime };
+      } catch (_) { /* try next */ }
     }
-    return '';
+    const mr = new MediaRecorder(stream);
+    return { mr, mime: mr.mimeType || 'audio/webm' };
   }
 
   async function getStream() {
@@ -718,13 +729,9 @@
       const stream = await getStream();
       setupAnalyser(stream);
 
-      const mime = pickMime();
-      const opts = mime ? { mimeType: mime, audioBitsPerSecond: 192000 } : { audioBitsPerSecond: 192000 };
-      let mr;
-      try { mr = new MediaRecorder(stream, opts); }
-      catch (_) { mr = new MediaRecorder(stream); }
+      const { mr, mime } = tryCreateRecorder(stream);
       recorder.mediaRecorder = mr;
-      recorder.mimeType = mr.mimeType || mime || 'audio/webm';
+      recorder.mimeType = mime;
       recorder.chunks = [];
 
       mr.addEventListener('dataavailable', e => {
@@ -836,7 +843,7 @@
     try {
       await dbPut(item);
       await render();
-      toast('Saved');
+      toast(`Saved as .${fileExt(item.mimeType).toUpperCase()}`);
     } catch (err) {
       console.error('IndexedDB write failed', err);
       toast('Could not save — storage error');
@@ -1355,9 +1362,9 @@
     let initial = await checkBuildStamp();
     if (initial) {
       const tail = String(initial).slice(-6);
-      $('#buildPill').textContent = 'v0.4·' + tail;
+      $('#buildPill').textContent = 'v0.5·' + tail;
     } else {
-      $('#buildPill').textContent = 'v0.4';
+      $('#buildPill').textContent = 'v0.5';
       return;
     }
     setInterval(async () => {
