@@ -7,3 +7,4 @@ node_modules/
 .qa-run.html
 .qa-browser.mjs
 .vercel/
+.vercel

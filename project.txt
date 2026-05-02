@@ -10,8 +10,9 @@ minimal animation.
 Status
 ------
 Waves 1+2+3 complete. Functional v0 with QA pass and design polish.
-Tunnelled at https://mic.aiprofits.cc (port 5096 via personal-apps tunnel).
-PM2 process: `voice-memo`. Listed in local-dashboard.
+Hosted on Vercel: https://voice-memo-aeonreon.vercel.app
+GitHub: https://github.com/AeonReon/voice-memo
+Listed in local-dashboard. No PM2 process, no tunnel — pure browser-only PWA.
 
 Stack
 -----
@@ -69,20 +70,29 @@ The cache-busting build-stamp pattern from APPS/CLAUDE.md would require either:
   (b) a build step that injects the SHA into index.html.
 Add when the user installs it on their iPhone/BOOX and asks for it.
 
-Local run
+Local dev
 ---------
-Service worker + getUserMedia require https or localhost. PM2 already
-runs the Express server on port 5096:
-    pm2 logs voice-memo      # see output
-    pm2 restart voice-memo   # apply code changes
-Or run directly without PM2:
-    cd APPS/voice-memo && node server.js
+Service worker + getUserMedia require https or localhost. For local dev:
+    cd APPS/voice-memo && npm install && npm run dev
 Then visit http://localhost:5096. Allow the mic prompt.
+(`server.js` is local-only — Vercel ignores it via the routing in vercel.json.)
 
 Public URL
 ----------
-https://mic.aiprofits.cc — via the personal-apps Cloudflare tunnel
-(UUID 48d1aed3-...). Ingress added to /Users/aiautomator/.cloudflared/personal-apps.yml.
+https://voice-memo-aeonreon.vercel.app
+
+Hosted on Vercel under the AeonReon team. Auto-deploys on every push to
+main. Deployment Protection is on by design — only Vercel team members
+can access it. Open the URL on any device where you're logged in to
+Vercel.com, then "Add to Home Screen" (iOS) or "Install app" (Android).
+
+Cache-busting
+-------------
+On every deploy, `scripts/inject-version.js` rewrites the
+__CACHE_VERSION__ token in sw.js to the current Git commit SHA. The page
+polls /build-stamp (a Vercel function returning VERCEL_GIT_COMMIT_SHA)
+every 60 s and shows a "New version available — tap to reload" banner
+if it changes. Tap → SW skip-waiting → reload → fresh code.
 
 Cross-platform compatibility
 ----------------------------
