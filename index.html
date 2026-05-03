@@ -602,7 +602,7 @@
         if (!MediaRecorder.isTypeSupported(mime)) continue;
       } catch (_) { continue; }
       try {
-        const mr = new MediaRecorder(stream, { mimeType: mime, audioBitsPerSecond: 192000 });
+        const mr = new MediaRecorder(stream, { mimeType: mime, audioBitsPerSecond: 96000 });
         return { mr, mime: mr.mimeType || mime };
       } catch (_) { /* try next */ }
     }
@@ -615,17 +615,36 @@
     // Voice-processing flags off so music + singing record cleanly.
     // With NS on, sustained notes and sibilants get treated as noise and
     // come out warbly / lispy — fine for calls, ruinous for memos.
-    const constraints = {
+    // Voice-processing flags off so music + singing record cleanly.
+    // With NS on, sustained notes and sibilants get treated as noise and
+    // come out warbly / lispy — fine for calls, ruinous for memos.
+    //
+    // No explicit sampleRate: forcing 48000 makes Android's audio HAL
+    // resample from the mic's native rate (often 16k on cheap/stripped
+    // devices like de-Googled e-readers), and a starved resampler
+    // produces fast "insect-clicking" micro-glitches in the recording.
+    // Letting the device pick its native rate avoids that whole layer.
+    const strictConstraints = {
       audio: {
         echoCancellation: false,
         noiseSuppression: false,
         autoGainControl: false,
         channelCount: 1,
-        sampleRate: 48000,
       },
       video: false,
     };
-    recorder.stream = await navigator.mediaDevices.getUserMedia(constraints);
+    try {
+      recorder.stream = await navigator.mediaDevices.getUserMedia(strictConstraints);
+    } catch (err) {
+      // OverconstrainedError on stripped-down Android audio HALs (e.g. de-Googled
+      // BOOX): some devices reject specific sample rates / processing flags.
+      // Fall back to a bare audio request — quality may differ but at least
+      // the user can record. Re-throw permission errors unchanged.
+      if (err && err.name === 'NotAllowedError') throw err;
+      if (err && err.name === 'PermissionDeniedError') throw err;
+      console.warn('Strict audio constraints failed, retrying with {audio: true}:', err && err.name, err && err.message);
+      recorder.stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+    }
     return recorder.stream;
   }
 
@@ -758,8 +777,20 @@
       console.error('record error', err);
       if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
         showPermPrompt();
+      } else if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        toast('Mic API not available — needs HTTPS and a recent browser');
+      } else if (err.name === 'NotFoundError') {
+        toast('No microphone found on this device');
+      } else if (err.name === 'NotReadableError') {
+        toast('Mic is busy — close other apps using audio');
+      } else if (err.name === 'OverconstrainedError') {
+        toast('Mic settings not supported on this device');
+      } else if (err.name === 'SecurityError') {
+        toast('Mic blocked — check Brave site permissions');
       } else {
-        toast('Microphone unavailable');
+        // Surface the actual error name so unfamiliar device quirks
+        // (de-Googled Androids, e-readers, kiosks) are diagnosable.
+        toast(`Mic error: ${err.name || 'unknown'}`);
       }
     }
   }
